@@ -121,10 +121,10 @@ If the model implementation allows sending multiple inputs, such as over sockets
     executioner = Executioner()
     executioner.distributeOnAllCores()
     executioner.onStart(Execute("./myModel -p ${PORT}"))
-    executioner.add(Send("${field1} ${field2}\n", server=${SERVER}, port=${PORT}))
+    executioner.add(Send("${field1} ${field2}\n", address="${SERVER}:${PORT}"))
     executioner.add(Receive(numlines=1))
     executioner.add(ParseOutput(outputParser))
-    executioner.onComplete(Send("\n", port=${PORT}))
+    executioner.onComplete(Send("\n", address="${SERVER}:${PORT}"))
     
 If sockets are used, Executioner will fill in the appropriate values for `${SERVER}` and `${PORT}` for each process.
     
