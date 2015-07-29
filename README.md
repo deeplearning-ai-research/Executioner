@@ -116,13 +116,16 @@ One option for parallelization is spawning a new model for each input:
     executioner.distributeOnAllCores()
     executioner.add(Execute("./myModel -a ${field1} -b ${field2}"))
     
-If the model implementation allows sending multiple inputs (e.g., over sockets or via standard input).  Executioner will spawn one instance of the model for each core but send multiple model inputs to each instance.  If sockets are used, Executioner will define `${SERVER}` and `${PORT}`.
+If the model implementation allows sending multiple inputs, such as over sockets or by standard input/output, Executioner will spawn one instance of the model for each core but distribute the model evaluations across all instances:
 
     executioner = Executioner()
+    executioner.distributeOnAllCores()
     executioner.onStart(Execute("./myModel -p ${PORT}"))
     executioner.add(Send("${field1} ${field2}\n", server=${SERVER}, port=${PORT}))
     executioner.add(Receive(numlines=1))
     executioner.add(ParseOutput(outputParser))
     executioner.onComplete(Send("\n", port=${PORT}))
+    
+If sockets are used, Executioner will fill in the appropriate values for `${SERVER}` and `${PORT}` for each process.
     
 Suppose we are running on 4 cores.  Executioner will spawn the program `myModel` 4 times, each with a different port.  Then, it invokes the `Send`, `Receive`, and `ParseOutput` for each model input.  The work will be evenly distributed across all 4 processes.  Finally, once all model inputs are evaluated, it sends the terminate signal (an empty line) to the 4 processes.
