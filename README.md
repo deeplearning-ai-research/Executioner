@@ -24,12 +24,12 @@ Many scientific and engineering fields often involve running computer models wit
             return float(tree.find("/root/results/value").text)
 
         executioner = Executioner()
-        executioner.tasks.add(CreateTempDir())
-        executioner.tasks.add(Copy(from="~/model/"))
-        executioner.tasks.add(Substitute(ignore="myModel"))
-        executioner.tasks.add(Execute("./myModel -i inputs/config.xml"))
-        executioner.tasks.add(ParseOutput("output.xml", outputParser))
-        executioner.tasks.add(DeleteTempDir())
+        executioner.add(CreateTempDir())
+        executioner.add(Copy(from="~/model/"))
+        executioner.add(Substitute(ignore="myModel"))
+        executioner.add(Execute("./myModel -i inputs/config.xml"))
+        executioner.add(ParseOutput("output.xml", outputParser))
+        executioner.add(DeleteTempDir())
 
         executioner.evaluateBatch([
             { "field1" = value11, "field2" = value12, ... },
@@ -61,51 +61,49 @@ Many scientific and engineering fields often involve running computer models wit
                 DeleteTempDir()),
             evaluate=list(
                 c(field1=value1, field2=value2)))
+                
+## Use Cases
 
-## Example Scripting Language
+### Passing Arguments on Command Line
 
-    Python Code:
-        executioner = Executioner()
-        executioner.loadScript("myScript.exs")
-        executioner.evaluate({ "field1" = value1, "field2" = value2, ... })
-        executioner.evaluateBatch([
-            { "field1" = value11, "field2" = value12, ... },
-            { "field1" = value21, "field2" = value22, ... },
-            ...
-        ])
+    executioner = Executioner()
+    executioner.add(Execute("./myModel -a ${field1} -b ${field2}"))
 
-    myScript.exs:
-        temp = createTempDir()
-        setWorkingDir(temp)
-        
-        copy(from="~/model/")
-        substitute(ignore="myModel")
-        execute("./myModel -i inputs/config.xml")
-        output = parseXML("output.txt")
-        
-        delete(temp)
-        return output.get("/root/model/output/value")
+### Inputting to Standard Input / Reading from Standard Output
 
+    executioner = Executioner()
+    executioner.add(Execute("./myModel"))
+    executioner.add(WriteInput("a: ${field1}\nb: ${field2}"))
+    executioner.add(ParseOutput(outputParser)) # outputParser is a function reading from a stream
     
+### Write Input File
 
-## Scripting Language Functions
+    executioner = Executioner()
+    executioner.add(WriteFile("input.json", "{ \"a\"=${field1}, \"b\"=${field2} }"))
+    executioner.add(Execute("./myModel -i input.json"))
+    
+### Error Handling
 
-`createTempDir()` - Create a new, empty temporary directory
+    executioner = Executioner()
+    executioner.add(Execute("./myModel"))
+    executioner.add(CheckExitCode(ok=0)) # raises error if exit code != 0
+    
+### String Replacement
 
-`delete(...)` - Deletes a file or folder
+    executioner = Executioner()
+    executioner.add(CreateTempDir())
+    executioner.add(Copy(from="~/program/"))
+    executioner.add(Substitute()) # scans all files in temp directory and replaces ${keywords}
+    executioner.add(Execute("./myModel"))
+    executioner.add(DeleteTempDir())
+    
+### Sockets
 
-`setWorkingDir(...)` - Sets the current working directory.  
+In this example, we start a long-running process that will process all inputs.  Each input is sent to the process on port 3088 and the output is received on one line.  The process ends when we send an empty input line.
 
-`copy(from=..., to=...)` - Copies the file or directory to the working directory.
-
-`substitute(file=..., ignore=...)` - Keyword substitution in the working directory.
-
-`execute(...)` - Executes the given command within the working directory.
-
-`parseCSV(...)` - Parses a CSV or other delimiter-separated file.  The returned object contains methods for accessing the entries in the CSV file.
-
-`parseXML(...)` - Parses an XML file.  The returned object contains method for accessing the elements and attributes within the XML file, such as `parseXML("file.xml").get("/root/path/to/element")`.
-
-`send(url=..., port=..., file=..., content=...)` - Transmits the raw contents of a file or string over sockets.
-
-`receive(port=..., byline=...)` - Waits and reads from a socket.  If `byline` is true, then it reads only a single line from the socket.
+    executioner = Executioner()
+    executioner.onStart(Execute("./myModel -p 3088"))
+    executioner.add(Send("${field1} ${field2}\n", server='localhost', port=3088))
+    executioner.add(Receive(numlines=1))
+    executioner.add(ParseOutput(outputParser))
+    executioner.onComplete(Send("\n", port=3088))
