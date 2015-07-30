@@ -132,15 +132,19 @@ Suppose we are running on 4 cores.  Executioner will spawn the program `myModel`
 
 ### Commonly-Used Software
 
-Where available, it would be useful to provide plugins to analytical software, such as MATLAB, Scilab, Octave, ModelCenter, etc.
+Where available, it would be useful to provide plugins to analytical software, such as Matlab, Scilab, Octave, ModelCenter, etc.  For example, one could run a Matlab command, passing in the inputs and reading the outputs:
 
-    # callback function is provided a reference to Matlab environment
-    def outputParser(matlabEnv):
-        return { "X":matlabEnv.get("X"), "Y":matlabEnv.get("Y") }
+    executioner = Executioner()
+    executioner.onStart(StartMatlabEngine())
+    executioner.add(RunMatlabCommand("myFunction", input=["${field1}", "${field2}"], output=["X", "Y"]))
+    executioner.onComplete(RunMatlabCommand("exit"))
+    
+Or load the fields into Matlab's memory prior to invoking a script:
 
     executioner = Executioner()
     executioner.onStart(StartMatlabEngine())
     executioner.add(SetMatlabFields()) # load fields into memory in Matlab
     executioner.add(RunMatlabScript("myScript.m"))
-    executioner.add(ParseMatlabOutput(outputParser))
+    executioner.add(GetMatlabFields("X", "Y"))
     executioner.onComplete(RunMatlabCommand("exit"))
+    
