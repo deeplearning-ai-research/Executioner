@@ -129,3 +129,18 @@ If the model implementation allows sending multiple inputs, such as over sockets
 If sockets are used, Executioner will fill in the appropriate values for `${SERVER}` and `${PORT}` for each process.
     
 Suppose we are running on 4 cores.  Executioner will spawn the program `myModel` 4 times, each with a different port.  Then, it invokes the `Send`, `Receive`, and `ParseOutput` for each model input.  The work will be evenly distributed across all 4 processes.  Finally, once all model inputs are evaluated, it sends the terminate signal (an empty line) to the 4 processes.
+
+### Commonly-Used Software
+
+Where available, it would be useful to provide plugins to analytical software, such as MATLAB, Scilab, Octave, ModelCenter, etc.
+
+    # callback function is provided a reference to Matlab environment
+    def outputParser(matlabEnv):
+        return { "X":matlabEnv.get("X"), "Y":matlabEnv.get("Y") }
+
+    executioner = Executioner()
+    executioner.onStart(StartMatlabEngine())
+    executioner.add(SetMatlabFields()) # load fields into memory in Matlab
+    executioner.add(RunMatlabScript("myScript.m"))
+    executioner.add(ParseMatlabOutput(outputParser))
+    executioner.onComplete(RunMatlabCommand("exit"))
