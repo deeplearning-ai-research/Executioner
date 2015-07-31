@@ -6,12 +6,13 @@ Created on Jul 30, 2015
 import os
 import logging
 import subprocess
+import shlex
 from tempfile import mkdtemp
 from shutil import rmtree
 from exceptions import TaskError
-from utils import copytree, substitute, substitutetree
-from __builtin__ import file
-from test.test_support import args_from_interpreter_flags
+from utils import copytree, substitute, substitutetree, redirect
+from threading import Thread
+from cStringIO import StringIO
 
 class Task(object):
     '''
@@ -118,9 +119,22 @@ class Execute(Task):
         command = substitute(self.command, env)
         
         logging.info("Executing command " + command)
-        process = subprocess.Popen(command, stdout=subprocess.PIPE)
-        env["STDOUT"] = process.stdout.read()
-        env["EXIT_CODE"] = process.wait()
+        process = subprocess.Popen(shlex.split(command),
+                                   stdin=subprocess.PIPE,
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+        
+        env["PROCESS"] = process
+        env["STDIN"] = process.stdin
+        env["STDOUT"] = process.stdout
+        env["STDERR"] = process.stderr
+        
+        #env["STDOUT"] = StringIO()
+        #Thread(target=redirect, args=(process.stdout, env, "STDOUT")).start()
+        
+        #env["STDERR"] = StringIO()
+        #Thread(target=redirect, args=(process.stderr, env, "STDERR")).start()
+
         logging.info("Successfully executed command")
         
 
@@ -138,9 +152,11 @@ class CheckExitCode(Task):
             self.ok = ok
         
     def run(self, env):
-        if "EXIT_CODE" not in env:
-            logging.error("EXIT_CODE not set, call Execute before CheckExitCode")
-            raise TaskError("EXIT_CODE not set, call Execute before CheckExitCode")
+        if "PROCESS" not in env:
+            logging.error("PROCESS not set, call Execute before CheckExitCode")
+            raise TaskError("PROCESS not set, call Execute before CheckExitCode")
+        
+        env["EXIT_CODE"] = env["PROCESS"].wait()
         
         if env["EXIT_CODE"] not in self.ok:
             logging.error("Execute failed, expected exit code " + str(self.ok) + ", received " + str(env["EXIT_CODE"]))
@@ -148,6 +164,29 @@ class CheckExitCode(Task):
         
         logging.info("Exit code ok")
         
+        
+class WriteInput(Task):
+    '''
+    Writes to the STDIN of the running process.
+    '''
+    
+    def __init__(self, input):
+        super(WriteInput, self).__init__()
+        self.input = input
+        
+    def run(self, env):
+        if "STDIN" not in env:
+            logging.error("STDIN not defined, run Execute first")
+            raise TaskError("STDIN not defined, run Execute first")
+        
+        formatted_input = substitute(self.input, env)
+        
+        logging.info("Sending input to stdin: " + formatted_input)
+        stdin = env["STDIN"]
+        stdin.write(formatted_input)
+        stdin.flush()
+        
+    
         
 class PrintEnv(Task):
     '''
@@ -195,6 +234,27 @@ class ParseOutput(Task):
     def run(self, env):
         results = self.callback(env["STDOUT"])
         env.update(results)
+
+
+class ParseLine(Task):
+    '''
+    Parses a line from the last Execute call.
+    '''
+    
+    def __init__(self, name="output", delimiters=None, type=str):
+        super(ParseLine, self).__init__()
+        self.name = name
+        self.delimiters = delimiters
+        self.type = type
+        
+    def run(self, env):
+        stdout = env["STDOUT"]
+        line = stdout.readline()
+        
+        logging.info("Parsed line " + line)
+        result = { self.name : map(self.type, line.split(self.delimiters)) }
+        env.update(result)
+        
         
         
 class Format(Task):
@@ -202,10 +262,10 @@ class Format(Task):
     Formats a field.
     '''
     
-    def __init__(self, name, format_string="{}", rename=None):
+    def __init__(self, name, format="{}", rename=None):
         super(Format, self).__init__()
         self.name = name
-        self.format_string = format_string
+        self.format = format
         self.rename = rename
         
     def run(self, env):
@@ -219,5 +279,26 @@ class Format(Task):
         
         logging.info("Formatting " + self.name)
         old_val = env[self.name]
-        env[new_name] = self.format_string.format(old_val)
+        
+        if callable(self.format):
+            env[new_name] = self.format(old_val)
+        else:
+            env[new_name] = self.format.format(old_val)
+            
         logging.info("Saved " + new_name + " as " + str(env[new_name]))
+        
+
+class Return(Task):
+    '''
+    Picks a subset of the fields to return.
+    '''
+    
+    def __init__(self, *fields):
+        super(Return, self).__init__()
+        self.fields = fields
+        
+    def run(self, env):
+        unwanted = set(env.keys()) - set(self.fields)
+        
+        for key in unwanted:
+            del env[key]

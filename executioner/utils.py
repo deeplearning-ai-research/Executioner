@@ -42,3 +42,14 @@ def substitutetree(src, env):
                 
             with open(s, 'w') as file:
                 file.write(template.safe_substitute(env))
+                
+def redirect(stream, env, name):
+    while True:
+        line = stream.readline()
+        
+        if not line:
+            break
+
+        env[name].seek(0, os.SEEK_END)
+        env[name].write(line)
+        print(env[name].getvalue())
