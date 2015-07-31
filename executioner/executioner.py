@@ -9,17 +9,21 @@ class ResultList(list):
     
     def __getitem__(self, pos):
         if type(pos) is tuple:
-            i,j = pos
-            subset = super(ResultList, self).__getitem__(i)
+            indices,keys = pos
             
-            if type(j) is list or type(j) is tuple:
+            if type(indices) is slice:
+                indices = xrange(*indices.indices(len(self)))
+            elif type(indices) is int:
+                indices = [indices]
+
+            if type(keys) is list or type(keys) is tuple:
                 result = ResultList()
                 
-                for entry in subset:
+                for i in indices:
                     submap = {}
                     
-                    for key in j:
-                        submap[key] = entry[key]
+                    for key in keys:
+                        submap[key] = super(ResultList, self).__getitem__(i)[key]
                     
                     result.append(submap)
                     
@@ -27,8 +31,8 @@ class ResultList(list):
             else:
                 result = []
                 
-                for entry in subset:
-                    result.append(entry[j])
+                for i in indices:
+                    result.append(super(ResultList, self).__getitem__(i)[keys])
                     
                 return result
         else:
