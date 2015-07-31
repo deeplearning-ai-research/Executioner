@@ -1,6 +1,39 @@
 import os
 import socket
 
+class ResultList(list):
+    '''
+    List of maps for storing the output of evaluateBatch.  Provides slicing
+    to get specific fields from the output.
+    '''
+    
+    def __getitem__(self, pos):
+        if type(pos) is tuple:
+            i,j = pos
+            subset = super(ResultList, self).__getitem__(i)
+            
+            if type(j) is list or type(j) is tuple:
+                result = ResultList()
+                
+                for entry in subset:
+                    submap = {}
+                    
+                    for key in j:
+                        submap[key] = entry[key]
+                    
+                    result.append(submap)
+                    
+                return result
+            else:
+                result = []
+                
+                for entry in subset:
+                    result.append(entry[j])
+                    
+                return result
+        else:
+            super(ResultList, self).__getitem__(pos)
+
 class Executioner(object):
     
     def __init__(self):
@@ -61,12 +94,8 @@ class Executioner(object):
             
         return env
     
-    def evaluateBatch(self, inputs=[], *args):
-        all_inputs = []
-        all_inputs.append(inputs)
-        all_inputs.append(args)
-        
-        results = []
+    def evaluateBatch(self, inputs=[]):        
+        results = ResultList()
         
         for input in inputs:
             results.append(self.evaluate(input))

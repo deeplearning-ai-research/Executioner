@@ -1,3 +1,3 @@
 __all__ = ["exceptions", "tasks"]
 
-from executioner import Executioner
+from executioner import Executioner, ResultList

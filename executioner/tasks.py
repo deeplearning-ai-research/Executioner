@@ -7,12 +7,10 @@ import os
 import logging
 import subprocess
 import shlex
-from tempfile import mkdtemp
-from shutil import rmtree
+import utils
+import tempfile
 from exceptions import TaskError
-from utils import copytree, substitute, substitutetree, redirect
 from threading import Thread
-from cStringIO import StringIO
 
 class Task(object):
     '''
@@ -28,7 +26,8 @@ class Task(object):
     
 class CreateTempDir(Task):
     '''
-    Creates a new, empty temporary directory.
+    Creates a new, empty temporary directory and sets WORK_DIR to this
+    temporary directory.
     '''
     
     def __init__(self):
@@ -36,7 +35,7 @@ class CreateTempDir(Task):
         
     def run(self, env):
         logging.info("Creating temporary directory")
-        dir = mkdtemp()
+        dir = tempfile.mkdtemp()
         env["WORK_DIR"] = dir
         logging.info("Successfully created temporary directory: " + dir)
         
@@ -56,8 +55,43 @@ class DeleteTempDir(Task):
         
         dir = env["WORK_DIR"]
         logging.info("Deleting temporary directory: " + dir)
-        rmtree(dir)
+        utils.remove(dir)
         logging.info("Successfully deleted temporary directory")
+        
+        
+class SetWorkDir(Task):
+    '''
+    Sets the WORK_DIR.
+    '''
+    
+    def __init__(self, dir):
+        super(SetWorkDir, self).__init__()
+        self.dir = dir
+        
+    def run(self, env):
+        logging.info("Setting work directory")
+        env["WORK_DIR"] = self.dir
+        logging.info("Successfully set work directory: " + self.dir)   
+        
+        
+class Delete(Task):
+    '''
+    Deletes a file or directory.
+    '''
+    
+    def __init__(self, path):
+        super(Delete, self).__init__()
+        self.path = path
+        
+    def run(self, env):
+        logging.info("Deleting " + str(self.path))
+        
+        if type(self.path) is list or type(self.path) is tuple:
+            for p in self.path:
+                utils.remove(p)
+        else:
+            utils.remove(self.path)
+        
         
 class Copy(Task):
     '''
@@ -79,7 +113,7 @@ class Copy(Task):
             toDir = env["WORK_DIR"]
         
         logging.info("Copying " + self.fromDir + " to " + toDir)
-        copytree(self.fromDir, toDir)
+        utils.copytree(self.fromDir, toDir)
         logging.info("Successfully copied folder contents")
         
 
@@ -102,7 +136,7 @@ class Substitute(Task):
             folder = env["WORK_DIR"]
             
         logging.info("Substituting keywords in " + dir)
-        substitutetree(dir, env)
+        utils.substitutetree(dir, env)
         logging.info("Successfully substituted keywords")
         
         
@@ -111,12 +145,13 @@ class Execute(Task):
     Executes a program.
     '''
     
-    def __init__(self, command):
+    def __init__(self, command, timeout=None):
         super(Execute, self).__init__()
         self.command = command
+        self.timeout = timeout
         
     def run(self, env):
-        command = substitute(self.command, env)
+        command = utils.substitute(self.command, env)
         
         logging.info("Executing command " + command)
         process = subprocess.Popen(shlex.split(command),
@@ -129,11 +164,7 @@ class Execute(Task):
         env["STDOUT"] = process.stdout
         env["STDERR"] = process.stderr
         
-        #env["STDOUT"] = StringIO()
-        #Thread(target=redirect, args=(process.stdout, env, "STDOUT")).start()
-        
-        #env["STDERR"] = StringIO()
-        #Thread(target=redirect, args=(process.stderr, env, "STDERR")).start()
+        Thread(target=utils.process_monitor, args=(process,), kwargs={ "timeout":self.timeout }).start()
 
         logging.info("Successfully executed command")
         
@@ -179,7 +210,7 @@ class WriteInput(Task):
             logging.error("STDIN not defined, run Execute first")
             raise TaskError("STDIN not defined, run Execute first")
         
-        formatted_input = substitute(self.input, env)
+        formatted_input = utils.substitute(self.input, env)
         
         logging.info("Sending input to stdin: " + formatted_input)
         stdin = env["STDIN"]
@@ -217,7 +248,7 @@ class WriteFile(Task):
         logging.info("Creating file " + str(absfile))
         
         with open(absfile, 'w') as file:
-            file.write(substitute(self.content, env))
+            file.write(utils.substitute(self.content, env))
         
         logging.info("Successfully created file")
         
@@ -252,8 +283,17 @@ class ParseLine(Task):
         line = stdout.readline()
         
         logging.info("Parsed line " + line)
-        result = { self.name : map(self.type, line.split(self.delimiters)) }
-        env.update(result)
+        values = map(self.type, line.split(self.delimiters))
+        
+        if type(self.name) is list:
+            if len(self.name) != len(values):
+                logging.error("Number of parsed values (" + str(len(values)) + ") does not match number of names (" + str(len(self.name)) + ")")
+                raise TaskError("Number of parsed values (" + str(len(values)) + ") does not match number of names (" + str(len(self.name)) + ")")
+            
+            for i, name in enumerate(self.name):
+                env.update({ name : values[i] })
+        else: 
+            env.update({ self.name : values })
         
         
         
