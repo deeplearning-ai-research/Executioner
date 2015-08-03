@@ -29,8 +29,11 @@ def copytree(src, dst):
             if not os.path.exists(d) or os.stat(s).st_mtime - os.stat(d).st_mtime > 1:
                 shutil.copy2(s, d)
                 
-def get_substitution_key(str, env):
-    substitionEngine = SubstitionEngine(str)
+def get_substitution_key(key, env):
+    if type(key) is not str:
+        return None
+    
+    substitionEngine = SubstitionEngine(key)
     
     if (substitionEngine.is_substitution_str()):
         if substitionEngine.get_substitution_name() in env:

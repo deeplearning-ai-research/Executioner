@@ -483,3 +483,23 @@ class PrintStderr(Task):
         stderr = env["STDERR"]
         
         print(stderr.read())
+        
+        
+class Assert(Task):
+    '''
+    Assertions, used for unit testing or validating inputs.  The environment, env,
+    will be defined and can be accessed in the expression.  This method
+    uses eval() and therefore should be used carefully.
+    '''
+    
+    def __init__(self, expr, message=None):
+        super(Assert, self).__init__()
+        self.expr = expr
+        self.message = message
+        
+    def run(self, env):
+        logging.info("Testing assertion " + str(self.expr))
+        
+        if not eval(self.expr):
+            logging.info("Assertion failed!")
+            raise AssertionError(self.message if self.message else "Assertion failed")
