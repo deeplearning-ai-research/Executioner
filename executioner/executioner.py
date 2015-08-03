@@ -1,5 +1,6 @@
 import os
 import socket
+import traceback
 
 class ResultList(list):
     '''
@@ -45,6 +46,7 @@ class Executioner(object):
         self.tasks = []
         self.start_tasks = []
         self.complete_tasks = []
+        self.error_tasks = []
         self.running = False
         self.env = {}
         
@@ -68,6 +70,9 @@ class Executioner(object):
         
     def onComplete(self, task):
         self.complete_tasks.append(task)
+        
+    def onError(self, task):
+        self.error_tasks.append(task)
     
     def start(self):
         self.env["SERVER"] = socket.gethostbyname(socket.getfqdn())
@@ -84,17 +89,23 @@ class Executioner(object):
             
         self.running = False
     
-    def evaluate(self, input={}, **kwargs):
+    def evaluate(self, input={}):
         if not self.running:
             self.start()
         
-        env = dict()
-        env.update(self.env)
-        env.update(input)
-        env.update(kwargs)
-        
-        for task in self.tasks:
-            task.run(env)
+        try:
+            env = dict()
+            env.update(self.env)
+            env.update(input)
+            
+            for task in self.tasks:
+                task.run(env)
+        except:
+            print("Caught exception: ")
+            traceback.print_exc()
+            
+            for task in self.error_tasks:
+                task.run(env)
             
         return env
     

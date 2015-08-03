@@ -9,8 +9,11 @@ import subprocess
 import shlex
 import utils
 import tempfile
+import socket
+import time
 from exceptions import TaskError
 from threading import Thread
+from StringIO import StringIO
 
 class Task(object):
     '''
@@ -145,10 +148,12 @@ class Execute(Task):
     Executes a program.
     '''
     
-    def __init__(self, command, timeout=None):
+    def __init__(self, command, timeout=None, ignore_stdout=False, ignore_stderr=False):
         super(Execute, self).__init__()
         self.command = command
         self.timeout = timeout
+        self.ignore_stdout = ignore_stdout
+        self.ignore_stderr = ignore_stderr
         
     def run(self, env):
         command = utils.substitute(self.command, env)
@@ -156,13 +161,17 @@ class Execute(Task):
         logging.info("Executing command " + command)
         process = subprocess.Popen(shlex.split(command),
                                    stdin=subprocess.PIPE,
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE)
+                                   stdout=None if self.ignore_stdout else subprocess.PIPE,
+                                   stderr=None if self.ignore_stderr else subprocess.PIPE)
         
         env["PROCESS"] = process
         env["STDIN"] = process.stdin
-        env["STDOUT"] = process.stdout
-        env["STDERR"] = process.stderr
+        
+        if not self.ignore_stdout:
+            env["STDOUT"] = process.stdout
+            
+        if not self.ignore_stderr:
+            env["STDERR"] = process.stderr
         
         Thread(target=utils.process_monitor, args=(process,), kwargs={ "timeout":self.timeout }).start()
 
@@ -282,7 +291,7 @@ class ParseLine(Task):
         stdout = env["STDOUT"]
         line = stdout.readline()
         
-        logging.info("Parsed line " + line)
+        logging.info("Parsing line " + line)
         values = map(self.type, line.split(self.delimiters))
         
         if type(self.name) is list:
@@ -342,3 +351,135 @@ class Return(Task):
         
         for key in unwanted:
             del env[key]
+
+class Connect(Task):
+    '''
+    Establishes a TCP connection.
+    '''
+    
+    def __init__(self, address=None, server=None, port=None):
+        super(Connect, self).__init__()
+        
+        if not address and (not server or not port):
+            logging.error("Connect must define an address or (server, port) pair")
+            raise TaskError("Connect must define an address or (server, port) pair")
+        
+        if address:
+            if not ":" in address:
+                logging.error("Address missing port number")
+                raise TaskError("Address missing port number")
+            
+            self.server, self.port = address.split(":")
+        else:
+            self.server = server
+            self.port = port
+            
+    def run(self, env):
+        if "SOCKET" in env:
+            logging.error("SOCKET already defined, close prior connection first")
+            raise TaskError("SOCKET already defined, close prior connection first")
+        
+        logging.info("Connecting to " + str(self.server) + ":" + str(self.port))
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect((self.server, self.port))
+        env["SOCKET"] = s
+        env["SOCKET_FILE"] = s.makefile()
+        env["STDOUT"] = StringIO()
+        logging.info("Successfully connected")
+
+class Send(Task):
+    '''
+    Sends a message over sockets.
+    '''
+    
+    def __init__(self, message):
+        super(Send, self).__init__()
+        self.message = message
+            
+    def run(self, env):
+        if "SOCKET" not in env:
+            logging.error("SOCKET not defined, call Connect first")
+            raise TaskError("SOCKET not defined, call Connect first")
+        
+        s = env["SOCKET"]
+        formatted_msg = utils.substitute(self.message, env)
+        logging.info("Sending " + formatted_msg)
+        s.sendall(formatted_msg)
+        logging.info("Successfully sent message")
+        
+class Receive(Task):
+    '''
+    Receives a message over sockets.
+    '''
+    
+    def __init__(self, name="STDOUT", numlines=1):
+        super(Receive, self).__init__()
+        self.name = name
+        self.numlines = numlines
+        
+    def run(self, env):
+        if "SOCKET" not in env:
+            logging.error("SOCKET not defined, call Connect first")
+            raise TaskError("SOCKET not defined, call Connect first")
+        
+        logging.info("Waiting to receive message")
+        stdout = env["STDOUT"]
+        s = env["SOCKET_FILE"]
+        
+        pos = stdout.tell()
+        stdout.seek(0, os.SEEK_END)
+        
+        for i in range(self.numlines):
+            line = s.readline()
+            logging.info("Received line " + line)
+            stdout.write(line)
+        
+        stdout.seek(pos)
+        logging.info("Successfully received " + str(self.numlines) + " lines")
+        
+
+class Disconnect(Task):
+    '''
+    Disconnects the socket.
+    '''
+    
+    def __init__(self):
+        super(Disconnect, self).__init__()
+        
+    def run(self, env):
+        if "SOCKET" not in env:
+            return
+        
+        logging.info("Closing connection")
+        s = env["SOCKET"]
+        s.shutdown(1)
+        s.close()
+        del env["SOCKET"]
+            
+class Pause(Task):
+    '''
+    Pauses for a given number of seconds.
+    '''
+    
+    def __init__(self, seconds):
+        super(Pause, self).__init__()
+        self.seconds = seconds
+        
+    def run(self, env):
+        for i in range(self.seconds):
+            logging.info("Pausing for " + str(self.seconds-i) + " seconds")
+            time.sleep(1)
+            
+        
+class PrintStderr(Task):
+    '''
+    Prints the contents of STDERR.
+    '''
+    
+    def __init__(self):
+        super(PrintStderr, self).__init__()
+        
+    def run(self, env):
+        stderr = env["STDERR"]
+        
+        print(stderr.read())
