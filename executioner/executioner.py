@@ -23,7 +23,7 @@ class ResultList(list):
             
         for i in range(len(self)):
             value = super(ResultList, self).__getitem__(i)[key]
-            result.append(value[index] if type(value) is list else value)
+            result.append(value[index] if isinstance(value, list) else value)
                 
         return result
     
@@ -36,10 +36,10 @@ class ResultList(list):
         if keys is None:
             keys = self[0].keys()
             
-        if type(keys) is str:
+        if isinstance(keys, str):
             keys = [keys]
             
-        if type(keys) is set:
+        if isinstance(keys, set):
             keys = list(keys)
     
         if len(keys) == 1:
@@ -47,26 +47,26 @@ class ResultList(list):
             result = numpy.empty([len(self)], dtype=numpy.dtype(type(self[0][key])))
             
             for i, env in enumerate(self):
-                result[i] = env[key][index] if type(env[key]) is list else env[key]
+                result[i] = env[key][index] if isinstance(env[key], list) else env[key]
         else:
             dt = { "names" : keys, "formats" : [numpy.dtype(type(self[0][key])) for key in keys] }
             result = numpy.empty([len(self)], dtype=dt)
     
             for i, env in enumerate(self):
-                result[i] = tuple(env[key][index] if type(env[key]) is list else env[key] for key in keys)
+                result[i] = tuple(env[key][index] if isinstance(env[key], list) else env[key] for key in keys)
         
         return result
     
     def __getitem__(self, pos):
-        if type(pos) is tuple:
+        if isinstance(pos, tuple):
             indices,keys = pos
             
-            if type(indices) is slice:
+            if isinstance(indices, slice):
                 indices = xrange(*indices.indices(len(self)))
-            elif type(indices) is int:
+            elif isinstance(indices, int):
                 indices = [indices]
                 
-            if type(keys) is not list and type(keys) is not tuple:
+            if not isinstance(keys, list) and not isinstance(keys, tuple):
                 keys = [keys]
 
             result = ResultList()
@@ -80,7 +80,7 @@ class ResultList(list):
                 result.append(submap)
                     
             return result
-        elif type(pos) is str:
+        elif isinstance(pos, str):
             return self.to_list(pos)
         else:
             return super(ResultList, self).__getitem__(pos)
@@ -156,7 +156,7 @@ class Executioner(object):
                 task.run(env)
             
             # allow assertions to propagate for unit testing
-            if type(ex) is AssertionError:
+            if isinstance(ex, AssertionError):
                 raise
             
         return env

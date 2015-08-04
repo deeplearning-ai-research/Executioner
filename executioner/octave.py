@@ -84,10 +84,10 @@ class SetOctaveVar(Task):
         if env_key:
             engine.push(self.key, env[env_key])
             logging.info("Pushing variable " + self.key + " to Octave with value " + str(env[env_key]))
-        elif type(self.value) is str and self.value in env:
+        elif isinstance(self.value, str) and self.value in env:
             engine.push(self.key, env[self.value])
             logging.info("Pushing variable " + self.key + " to Octave with value " + str(env[self.value]))
-        elif type(self.value) is str:
+        elif isinstance(self.value, str):
             value = utils.substitute(self.value, env)
             engine.push(self.key, value)
             logging.info("Pushing variable " + self.key + " to Octave with value " + str(value))
@@ -144,11 +144,11 @@ class EvaluateOctaveFunction(Task):
                 engine.push(key, env[key])
                 input_strs.append(key)
                 logging.info("Pushing variable " + key + " to Octave with value " + str(env[key]))
-            elif type(arg) is str and arg in env:
+            elif isinstance(arg, str) and arg in env:
                 logging.info("Pushing variable " + arg + " to Octave with value " + str(env[arg]))
                 engine.push(arg, env[arg])
                 input_strs.append(arg)
-            elif type(arg) is str:
+            elif isinstance(arg, str):
                 input_strs.append(utils.substitute(arg, env))
             else:
                 input_strs.append(str(arg))

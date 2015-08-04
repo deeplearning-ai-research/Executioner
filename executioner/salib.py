@@ -15,7 +15,7 @@ class SALibSamples(object):
     def __init__(self, names, values):
         super(SALibSamples, self).__init__()
         self.index = -1
-        self.names = names["names"] if type(names) is dict else names
+        self.names = names["names"] if isinstance(names, dict) else names
         self.values = values
         
     def __iter__(self):

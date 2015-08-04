@@ -14,6 +14,8 @@ import time
 from exceptions import TaskError
 from threading import Thread
 from StringIO import StringIO
+from __builtin__ import file
+from django.core.files.base import File
 
 class Task(object):
     '''
@@ -24,6 +26,16 @@ class Task(object):
         super(Task, self).__init__()
         
     def run(self, env):
+        """
+        Runs the task.
+        
+        A task is an action performed by Executioner.  All tasks must implement
+        the run method.
+        
+        Args:
+            env: A dict storing the current Executioner environment.  Tasks may
+                get and set values in the environment as needed.
+        """
         raise NotImplementedError("Tasks must define the run method")
     
     
@@ -89,7 +101,7 @@ class Delete(Task):
     def run(self, env):
         logging.info("Deleting " + str(self.path))
         
-        if type(self.path) is list or type(self.path) is tuple:
+        if isinstance(self.path, list) or isinstance(self.path, tuple):
             for p in self.path:
                 utils.remove(p)
         else:
@@ -125,9 +137,11 @@ class Substitute(Task):
     Substitutes ${keyword} fields in all files with their assigned values.
     '''
     
-    def __init__(self, folder=None):
+    def __init__(self, folder=None, include="*", exclude=None):
         super(Substitute, self).__init__()
         self.folder = folder
+        self.include = include
+        self.exclude = exclude
         
     def run(self, env):
         folder = self.folder
@@ -138,8 +152,8 @@ class Substitute(Task):
                 raise TaskError("WORK_DIR not defined")
             folder = env["WORK_DIR"]
             
-        logging.info("Substituting keywords in " + dir)
-        utils.substitutetree(dir, env)
+        logging.info("Substituting keywords in " + folder)
+        utils.substitutetree(folder, env, self.include, self.exclude)
         logging.info("Successfully substituted keywords")
         
         
@@ -186,7 +200,7 @@ class CheckExitCode(Task):
     def __init__(self, ok=0):
         super(CheckExitCode, self).__init__()
         
-        if type(ok) is not list:
+        if not isinstance(ok, list):
             self.ok = [ ok ]
         else:
             self.ok = ok
@@ -300,7 +314,7 @@ class ParseLine(Task):
         logging.info("Parsing line " + line)
         values = map(self.type, line.split(self.delimiters))
         
-        if type(self.name) is list:
+        if isinstance(self.name, list):
             if len(self.name) != len(values):
                 logging.error("Number of parsed values (" + str(len(values)) + ") does not match number of names (" + str(len(self.name)) + ")")
                 raise TaskError("Number of parsed values (" + str(len(values)) + ") does not match number of names (" + str(len(self.name)) + ")")
@@ -357,6 +371,150 @@ class Return(Task):
         
         for key in unwanted:
             del env[key]
+            
+
+class ParseXML(Task):
+    '''
+    Parses an XML file and reads values.
+    '''
+    
+    def __init__(self, file):
+        super(ParseXML, self).__init__()
+        self.file = file
+        self.fields = []
+        
+    def get(self, xpath, key, conversion=str):
+        self.fields.append((xpath, key, conversion))
+        return self
+        
+    def run(self, env):
+        try:
+            from lxml import etree
+        except ImportError:
+            logging.warn("Unable to import lxml, using ElementTree instead.  Some XPath functionality may be limited")
+            import ElementTree as etree
+            
+        logging.info("Parsing XML file " + str(self.file))
+        
+        tree = etree.parse(self.file)
+        
+        for (xpath,key,conversion) in self.fields:
+            values = tree.xpath(xpath)
+            logging.info("Found " + str(len(values)) + " matches for " + str(xpath))
+            
+            if len(values) == 1:
+                env[key] = conversion(values[0] if isinstance(values[0], str) else values[0].text)
+            else:
+                env[key] = map(conversion, [value if isinstance(value, str) else value.text for value in values])
+                
+            logging.info("Setting " + key + " to " + str(env[key]))
+                
+                
+class ParseJSON(Task):
+    '''
+    Parses a JSON file and reads values.
+    '''
+    
+    def __init__(self, file):
+        super(ParseJSON, self).__init__()
+        self.file = file
+        self.fields = []
+        
+    def get(self, xpath, key, conversion=str):
+        self.fields.append((xpath, key, conversion))
+        return self
+        
+    def run(self, env):
+        import json
+        from jsonpath_rw import parse
+        logging.info("Parsing JSON file " + str(self.file))
+        
+        with open(self.file) as f:
+            content = json.load(f)
+            
+            for (xpath,key,conversion) in self.fields:
+                expr = parse(xpath)
+                values = expr.find(content)
+                logging.info("Found " + str(len(values)) + " matches for " + str(xpath))
+                
+                if len(values) == 1:
+                    if isinstance(values[0].value, list):
+                        env[key] = map(conversion, values[0].value)
+                    else:
+                        env[key] = conversion(values[0].value)
+                else:
+                    env[key] = map(conversion, [value.value for value in values])
+                    
+                logging.info("Setting " + key + " to " + str(env[key]))
+                    
+                    
+class ParseCSV(Task):
+    '''
+    Parses a CSV file and read values.  Internally, the CSV is converted to XML in the form
+    
+        <file>
+            <row key1="value11" key2="value12" ... />
+            <row key1="value21" key2="value22" ... />
+        </file>
+        
+    to allow XPath-like queries similar to the other ParseXXX methods.  For example, one can
+    query a single value:
+    
+        .get("row[5]/@key2")
+        .get("row[@key1='value']/@key2")
+        
+    Or get an array of values (all values from column "key2")
+    
+        .get("row/@key2")
+        
+    Due to this conversion, this method only supports CSV values that are compatible with XML
+    attributes.
+    '''
+    
+    def __init__(self, file, **kwargs):
+        super(ParseCSV, self).__init__()
+        self.file = file
+        self.kwargs = kwargs
+        self.fields = []
+        
+    def get(self, xpath, key, conversion):
+        self.fields.append((xpath, key, conversion))
+        return self
+    
+    def run(self, env):
+        import csv
+        
+        try:
+            from lxml import etree
+        except ImportError:
+            logging.warn("Unable to import lxml, using ElementTree instead.  Some XPath functionality may be limited")
+            import ElementTree as etree
+            
+        logging.info("Parsing CSV file " + str(self.file))
+        
+        with open(self.file) as f:
+            reader = csv.DictReader(f, **self.kwargs)
+            
+            logging.info("Converting CSV into XML structure")
+            tree = etree.Element("file")
+            
+            for row in reader:
+                entry = etree.SubElement(tree, "row")
+                
+                for (key,value) in row.iteritems():
+                    entry.set(key, value)
+                    
+            for (xpath,key,conversion) in self.fields:
+                values = tree.xpath(xpath)
+                logging.info("Found " + str(len(values)) + " matches for " + str(xpath))
+                
+                if len(values) == 1:
+                    env[key] = conversion(values[0] if isinstance(values[0], str) else values[0].text)
+                else:
+                    env[key] = map(conversion, [value if isinstance(value, str) else value.text for value in values])
+                    
+                logging.info("Setting " + key + " to " + str(env[key]))
+
 
 class Connect(Task):
     '''
@@ -386,7 +544,7 @@ class Connect(Task):
             raise TaskError("SOCKET already defined, close prior connection first")
         
         server = utils.substitute(self.server, env)
-        port = utils.substitute(self.port, env) if type(self.port) is str else self.port
+        port = utils.substitute(self.port, env) if isinstance(self.port, str) else self.port
         
         logging.info("Connecting to " + str(server) + ":" + str(port))
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

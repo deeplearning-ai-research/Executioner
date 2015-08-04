@@ -9,6 +9,7 @@ import re
 import shutil
 import time
 import logging
+import fnmatch
 from string import Template
 
 def copytree(src, dst):
@@ -30,7 +31,7 @@ def copytree(src, dst):
                 shutil.copy2(s, d)
                 
 def get_substitution_key(key, env):
-    if type(key) is not str:
+    if isinstance(key, str):
         return None
     
     substitionEngine = SubstitionEngine(key)
@@ -47,9 +48,17 @@ def substitute(str, env):
     substitionEngine = SubstitionEngine(str)
     return substitionEngine.substitute(env)
 
-def substitutetree(src, env):
+def substitutetree(src, env, include="*", exclude=None):
+    name = os.path.basename(src)
+    
+    if not matches(name, include) or matches(name, exclude):
+        return
+    
     for item in os.listdir(src):
         s = os.path.join(src, item)
+        
+        if not matches(item, include) or matches(item, exclude):
+            continue
         
         if os.path.isdir(s):
             substitutetree(s, env)
@@ -59,6 +68,22 @@ def substitutetree(src, env):
                 
             with open(s, 'w') as file:
                 file.write(substitionEngine.substitute(env))
+                
+def matches(filename, patterns=None):
+    '''
+    Tests if the given filename matches any Unix-like filename patterns.
+    '''
+    if patterns is None:
+        return False
+    
+    if not isinstance(patterns, list) and not isinstance(patterns, tuple):
+        patterns = [patterns]
+        
+    for pattern in patterns:
+        if fnmatch.fnmatch(filename, pattern):
+            return True
+        
+    return False
                 
 def remove(path):
     if os.path.isdir(path):
