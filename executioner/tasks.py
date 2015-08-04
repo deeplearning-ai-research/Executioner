@@ -267,12 +267,18 @@ class ParseOutput(Task):
     Parses the output from the last Execute call.
     '''
     
-    def __init__(self, callback):
+    def __init__(self, callback, file=None):
         super(ParseOutput, self).__init__()
         self.callback = callback
+        self.file = file
         
     def run(self, env):
-        results = self.callback(env["STDOUT"])
+        if self.file is not None:
+            with open(self.file) as f:
+                results = self.callback(f)
+        else:
+            results = self.callback(env["STDOUT"])
+            
         env.update(results)
 
 
@@ -379,9 +385,12 @@ class Connect(Task):
             logging.error("SOCKET already defined, close prior connection first")
             raise TaskError("SOCKET already defined, close prior connection first")
         
-        logging.info("Connecting to " + str(self.server) + ":" + str(self.port))
+        server = utils.substitute(self.server, env)
+        port = utils.substitute(self.port, env) if type(self.port) is str else self.port
+        
+        logging.info("Connecting to " + str(server) + ":" + str(port))
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect((self.server, self.port))
+        s.connect((server, int(port)))
         env["SOCKET"] = s
         env["SOCKET_FILE"] = s.makefile()
         env["STDOUT"] = StringIO()

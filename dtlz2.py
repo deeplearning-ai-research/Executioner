@@ -6,8 +6,8 @@
 # The Pennsylvania State University Research and Educational Use License.
 # You should have received a copy of this license along with this program.
 # If not, contact <dmh309@psu.edu>.
-from sys import *
-from math import *
+import sys
+import math
 
 nvars = 11
 nobjs = 2
@@ -34,11 +34,11 @@ while True:
 
 	for i in range(nobjs):
 		for j in range(nobjs-i-1):
-			objs[i] = objs[i] * cos(0.5 * pi * vars[j])
+			objs[i] = objs[i] * math.cos(0.5 * math.pi * vars[j])
 		if i != 0:
-			objs[i] = objs[i] * sin(0.5 * pi * vars[nobjs-i-1])
+			objs[i] = objs[i] * math.sin(0.5 * math.pi * vars[nobjs-i-1])
 
 	# Print objectives to standard output, flush to write immediately
 	print " ".join(["%0.17f" % obj for obj in objs])
-	stdout.flush()
+	sys.stdout.flush()
 

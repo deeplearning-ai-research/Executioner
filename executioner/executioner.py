@@ -1,6 +1,7 @@
 import os
 import socket
 import traceback
+import random
 
 class ResultList(list):
     '''
@@ -122,6 +123,7 @@ class Executioner(object):
     
     def start(self):
         self.env["SERVER"] = socket.gethostbyname(socket.getfqdn())
+        self.env["PORT"] = random.randint(1024, 65536)
         self.env["WORK_DIR"] = os.path.abspath(".")
         
         for task in self.start_tasks:
@@ -153,7 +155,7 @@ class Executioner(object):
             for task in self.error_tasks:
                 task.run(env)
             
-            # allow assertions to propogate for unit testing
+            # allow assertions to propagate for unit testing
             if type(ex) is AssertionError:
                 raise
             

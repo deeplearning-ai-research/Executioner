@@ -4,24 +4,6 @@ Created on Jul 31, 2015
 @author: dhadka
 '''
 
-import numpy as np
-
-def convert_to_numpy(output, field, index=0):
-    if len(output) == 0:
-        return np.empty([0])
-    
-    result = np.empty([len(output)])
-    
-    for i, map in enumerate(output):
-        value = map[field]
-        
-        if type(value) is list:
-            result[i] = value[index]
-        else:
-            result[i] = value
-        
-    return result
-
 class SALibSamples(object):
     '''
     Iterable that convert SALib's inputs, including

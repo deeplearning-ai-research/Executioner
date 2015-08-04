@@ -35,4 +35,5 @@ class EvaluateScilabFunction(Task):
         self.output = output
         
     def run(self, env):
-        
+        pass
+    
