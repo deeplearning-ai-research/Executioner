@@ -273,6 +273,35 @@ class WriteFile(Task):
         
         logging.info("Successfully created file")
         
+        
+class WriteJSON(Task):
+    '''
+    Writes the Python dict object to a JSON file, substituting any
+    keywords.
+    '''
+    
+    def __init__(self, json, filename, conversions={}):
+        super(WriteJSON, self).__init__()
+        self.json = json
+        self.filename = filename
+        self.conversions = conversions
+        
+    def run(self, env):
+        import json
+        sub_map = {}
+        
+        for key,value in self.json.iteritems():
+            if isinstance(value, str):
+                value = utils.substitute(value, env)
+                
+                if key in self.conversions:
+                    value = self.conversions[key](value)
+                
+            sub_map[key] = value
+            
+        with open(self.filename, "w") as f:
+            json.dump(sub_map, f)
+            
 
 class ParseOutput(Task):
     '''
@@ -448,12 +477,26 @@ class ParseJSON(Task):
                     
 class ParseCSV(Task):
     '''
-    Parses a CSV file and read values.  A simple syntax is used:
+    Parses a CSV file and extracts values.  A simple query syntax is used:
     
-        row["key1"] if row["key2"]=="..." and row["key3"]=="..."
+        VALUE if CONDITiONS
         
-    Internally, this is using the Python eval() function, so type conversion
-    functions can be used if necessary.
+    The variable row is available, which is a dict mapping the column headers
+    to the value for the current row.  
+    
+        row["key1"] if row["key2"]=="..."
+        
+    Internally, this is using the Python eval() function, so simple expressions,
+    such as boolean logic and type conversion functions can be used if necessary.
+    For example:
+    
+        row["key1"] if row["key2"]=="..." and float(row["key3"])>0.0
+        
+    If more than one row matches, then a list of values is returned.  For example,
+    an entire column can be output:
+    
+        row["key1"]
+        
     '''
     
     def __init__(self, file, **kwargs):

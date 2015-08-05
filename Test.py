@@ -79,6 +79,8 @@ logging.basicConfig(level=logging.INFO)
 
 env = {}
 ParseCSV("../../Results/cyberstar163.hpc.rcc.psu.edu-Cc1zt0/tabled_output.tab", delimiter="\t") \
-    .get("row['value'] if row['name']=='plantNutrientUptake' and row['path']=='//bean/nitrate' and float(row['time'])==3.0", "a") \
+    .get("row['value'] if row['name']=='plantNutrientUptake' and row['path']=='//bean/nitrate'", "a") \
     .run(env)
 print(env)
+
+WriteJSON({ "a":"${a}", "b":5, "c":"$c" }, "test.json", {"c":int}).run({"a":"hello", "c":2})
