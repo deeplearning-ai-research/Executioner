@@ -14,8 +14,6 @@ import time
 from exceptions import TaskError
 from threading import Thread
 from StringIO import StringIO
-from __builtin__ import file
-from django.core.files.base import File
 
 class Task(object):
     '''
@@ -450,25 +448,12 @@ class ParseJSON(Task):
                     
 class ParseCSV(Task):
     '''
-    Parses a CSV file and read values.  Internally, the CSV is converted to XML in the form
+    Parses a CSV file and read values.  A simple syntax is used:
     
-        <file>
-            <row key1="value11" key2="value12" ... />
-            <row key1="value21" key2="value22" ... />
-        </file>
+        row["key1"] if row["key2"]=="..." and row["key3"]=="..."
         
-    to allow XPath-like queries similar to the other ParseXXX methods.  For example, one can
-    query a single value:
-    
-        .get("row[5]/@key2")
-        .get("row[@key1='value']/@key2")
-        
-    Or get an array of values (all values from column "key2")
-    
-        .get("row/@key2")
-        
-    Due to this conversion, this method only supports CSV values that are compatible with XML
-    attributes.
+    Internally, this is using the Python eval() function, so type conversion
+    functions can be used if necessary.
     '''
     
     def __init__(self, file, **kwargs):
@@ -477,36 +462,37 @@ class ParseCSV(Task):
         self.kwargs = kwargs
         self.fields = []
         
-    def get(self, xpath, key, conversion):
-        self.fields.append((xpath, key, conversion))
+    def get(self, expr, key, conversion=str):
+        self.fields.append((expr, key, conversion))
         return self
     
     def run(self, env):
         import csv
         
-        try:
-            from lxml import etree
-        except ImportError:
-            logging.warn("Unable to import lxml, using ElementTree instead.  Some XPath functionality may be limited")
-            import ElementTree as etree
-            
-        logging.info("Parsing CSV file " + str(self.file))
-        
         with open(self.file) as f:
             reader = csv.DictReader(f, **self.kwargs)
-            
-            logging.info("Converting CSV into XML structure")
-            tree = etree.Element("file")
-            
+            results = {}
+
             for row in reader:
-                entry = etree.SubElement(tree, "row")
+                cleanup_row = {}
                 
-                for (key,value) in row.iteritems():
-                    entry.set(key, value)
+                for key,value in row.iteritems():
+                    cleanup_row[key.strip()] = value.strip() if isinstance(value, str) else value
+                
+                for (expr,key,conversion) in self.fields:
+                    if not expr.endswith(" else None"):
+                        expr += " else None"
+                        
+                    result = eval(expr, { "row" : cleanup_row })
                     
-            for (xpath,key,conversion) in self.fields:
-                values = tree.xpath(xpath)
-                logging.info("Found " + str(len(values)) + " matches for " + str(xpath))
+                    if result is not None:
+                        if key not in results:
+                            results[key] = [result]
+                        else:
+                            results[key].append(result)
+                            
+            for key,values in results.iteritems():
+                logging.info("Found " + str(len(values)) + " matches for " + key)
                 
                 if len(values) == 1:
                     env[key] = conversion(values[0] if isinstance(values[0], str) else values[0].text)
