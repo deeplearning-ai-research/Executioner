@@ -45,3 +45,22 @@ Executioner operates using tasks.  It defines many built-in tasks, or custom tas
 2. Per-evaluation tasks with `add`.  These tasks are executed once for every input being evaluated.
 3. Completion or shutdown tasks with `onComplete`.  These are executed once when Executioner is closed.
 
+Below, we demonstrate running a more complex model.  This model requires many input files to be generated before invoking the executable.  We create "templates" for these input files in the folder "ModelTemplate".  Within each template file, we can use special substitution keywords, such as `${field1}`, to indicate where Executioner should substitute actual values.  The output from the model is another XML file of the form:
+
+    <value name="y1">0.014</value>
+    <value name="y2">3.921</value>
+    ...
+    
+We can use the `ParseXML` task to extract specific value from the XML file using XPath expressions.  Similar tasks are provided for JSON and CSV files.
+
+    from executioner import Executioner, ResultList
+    
+    with Executioner() as executioner:
+        executioner.add(CreateTempDir())
+        executioner.add(Copy(from="~/ModelTemplate"))
+        executioner.add(Substitute())
+        executioner.add(Execute("model.exe -i config.xml"))
+        executioner.add(ParseXML("output.xml").get(".//value[@name='y1']/text()", "y1", float)) 
+        executioner.add(DeleteTempDir())
+        
+        executioner.execute({ "field1" : 1.0, "field2" : 3.14 })
