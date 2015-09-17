@@ -41,7 +41,7 @@ Perform sensitivity analysis on a model using SALib.  This demonstrates sending 
 
 Executioner operates using tasks.  It defines many built-in tasks, or custom tasks can be developed by extending the Task class.  When constructing a job, tasks are partitioned into three types:
 
-1) Startup tasks with `onStart`.  These are executed once when Executioner starts.
-2) Per-evaluation tasks with `add`.  These tasks are executed once for every input being evaluated.
-3) Completion or shutdown tasks with `onComplete`.  These are executed once when Executioner is closed.
+1. Startup tasks with `onStart`.  These are executed once when Executioner starts.
+2. Per-evaluation tasks with `add`.  These tasks are executed once for every input being evaluated.
+3. Completion or shutdown tasks with `onComplete`.  These are executed once when Executioner is closed.
 
