@@ -13,138 +13,35 @@ Many scientific and engineering fields often involve running computer models wit
 4. Enable parallel / batch processing across multiple cores or computers
 5. Implementations in multiple programming languages (initially targeting Python, Java, and R)
 
-## Example APIs
+## Examples:
 
-    Python:
-        from executioner import Executioner
-        import xml.etree.ElementTree as ET
+Perform sensitivity analysis on a model using SALib.  This demonstrates sending inputs to and receiving outputs from an external process using standard I/O.
 
-        def outputParser(file):
-            tree = ET.parse(file)
-            return float(tree.find("/root/results/value").text)
+    from executioner import Executioner, ResultList
+    from executioner.salib import *
+    from SALib.sample import saltelli
+    from SALib.analyze import sobol
 
-        executioner = Executioner()
-        executioner.add(CreateTempDir())
-        executioner.add(Copy(from="~/model/"))
-        executioner.add(Substitute(ignore="myModel"))
-        executioner.add(Execute("./myModel -i inputs/config.xml"))
-        executioner.add(ParseOutput("output.xml", outputParser))
-        executioner.add(DeleteTempDir())
-
-        executioner.evaluateBatch([
-            { "field1" = value11, "field2" = value12, ... },
-            { "field1" = value21, "field2" = value22, ... },
-        ])
-        
-    Java:
-        Executioner executioner = new Executioner();
-        executioner.add(new CreateTempDir());
-        executioner.add(new Copy("~/model/"));
-        executioner.add(new Substitute().ignore("myModel"));
-        executioner.add(new Execute("./myModel -i inputs/config.xml"));
-        executioner.add(new ParseOutput("output.xml", outputParser));
-        executioner.add(new DeleteTempDir());
-
-        executioner.withExecutorService(Executors.newFixedThreadPool(
-            Runtime.getRuntime().availableProcessors()));
-
-        executioner.evaluateBatch(...)
-        
-    R:
-        executioner(
-            tasks=list(
-                CreateTempDir(),
-                Copy(from="~/model/"),
-                Substitute(ignore="myModel"),
-                Execute("./myModel -i inputs/config.xml"),
-                ParseOutput("output.xml", outputParser),
-                DeleteTempDir()),
-            evaluate=list(
-                c(field1=value1, field2=value2)))
-                
-## Use Cases
-
-### Passing Arguments on Command Line
-
-    executioner = Executioner()
-    executioner.add(Execute("./myModel -a ${field1} -b ${field2}"))
-
-### Inputting to Standard Input / Reading from Standard Output
-
-    executioner = Executioner()
-    executioner.add(Execute("./myModel"))
-    executioner.add(WriteInput("a: ${field1}\nb: ${field2}"))
-    executioner.add(ParseOutput(outputParser)) # outputParser is a function reading from a stream
+    problem = {
+        'num_vars': 11,
+        'names': ['x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8', 'x9', 'x10', 'x11'], 
+        'bounds': [[0, 1], [0, 1], [0, 1], [0, 1], [0, 1], [0, 1], [0, 1], [0, 1], 
+                   [0, 1], [0, 1], [0, 1]]
+    }
     
-### Write Input File
+    with Executioner() as executioner:
+        executioner.onStart(Execute("python dtlz2.py"))
+        executioner.add(WriteInput("${x1} ${x2} ${x3} ${x4} ${x5} ${x6} ${x7} ${x8} ${x9} ${x10} ${x11}\n"))
+        executioner.add(ParseLine(type=float, name=["y1", "y2"]))
+        executioner.onComplete(WriteInput("\n")) # send empty line to terminate process
 
-    executioner = Executioner()
-    executioner.add(WriteFile("input.json", "{ \"a\"=${field1}, \"b\"=${field2} }"))
-    executioner.add(Execute("./myModel -i input.json"))
-    
-### Error Handling
+        samples = saltelli.sample(problem, 1000, calc_second_order=True)
+        Y = executioner.evaluateBatch(SALibSamples(problem, samples))
+        sobol.analyze(problem, Y.to_nparray("y1"), print_to_console=True)
 
-    executioner = Executioner()
-    executioner.add(Execute("./myModel"))
-    executioner.add(CheckExitCode(ok=0)) # raises error if exit code != 0
-    
-### String Replacement
+Executioner operates using tasks.  It defines many built-in tasks, or custom tasks can be developed by extending the Task class.  When constructing a job, tasks are partitioned into three types:
 
-    executioner = Executioner()
-    executioner.add(CreateTempDir())
-    executioner.add(Copy(from="~/program/"))
-    executioner.add(Substitute()) # scans all files in temp directory and replaces ${keywords}
-    executioner.add(Execute("./myModel"))
-    executioner.add(DeleteTempDir())
-    
-### Sockets
+1) Startup tasks with `onStart`.  These are executed once when Executioner starts.
+2) Per-evaluation tasks with `add`.  These tasks are executed once for every input being evaluated.
+3) Completion or shutdown tasks with `onComplete`.  These are executed once when Executioner is closed.
 
-In this example, we start a long-running process that will process all inputs.  Each input is sent to the process on port 3088 and the output is received on one line.  The process ends when we send an empty input line.
-
-    executioner = Executioner()
-    executioner.onStart(Execute("./myModel -p 3088"))
-    executioner.add(Send("${field1} ${field2}\n", server='localhost', port=3088))
-    executioner.add(Receive(numlines=1))
-    executioner.add(ParseOutput(outputParser))
-    executioner.onComplete(Send("\n", port=3088))
-
-### Parallelization
-
-One option for parallelization is spawning a new model for each input:
-
-    executioner = Executioner()
-    executioner.distributeOnAllCores()
-    executioner.add(Execute("./myModel -a ${field1} -b ${field2}"))
-    
-If the model implementation allows sending multiple inputs, such as over sockets or by standard input/output, Executioner will spawn one instance of the model for each core but distribute the model evaluations across all instances:
-
-    executioner = Executioner()
-    executioner.distributeOnAllCores()
-    executioner.onStart(Execute("./myModel -p ${PORT}"))
-    executioner.add(Send("${field1} ${field2}\n", address="${SERVER}:${PORT}"))
-    executioner.add(Receive(numlines=1))
-    executioner.add(ParseOutput(outputParser))
-    executioner.onComplete(Send("\n", address="${SERVER}:${PORT}"))
-    
-If sockets are used, Executioner will fill in the appropriate values for `${SERVER}` and `${PORT}` for each process.
-    
-Suppose we are running on 4 cores.  Executioner will spawn the program `myModel` 4 times, each with a different port.  Then, it invokes the `Send`, `Receive`, and `ParseOutput` for each model input.  The work will be evenly distributed across all 4 processes.  Finally, once all model inputs are evaluated, it sends the terminate signal (an empty line) to the 4 processes.
-
-### Commonly-Used Software
-
-Where available, it would be useful to provide plugins to analytical software, such as Matlab, Scilab, Octave, ModelCenter, etc.  For example, one could run a Matlab command, passing in the inputs and reading the outputs:
-
-    executioner = Executioner()
-    executioner.onStart(StartMatlabEngine())
-    executioner.add(RunMatlabCommand("myFunction", input=["${field1}", "${field2}"], output=["X", "Y"]))
-    executioner.onComplete(RunMatlabCommand("exit"))
-    
-Or load the fields into Matlab's memory prior to invoking a script:
-
-    executioner = Executioner()
-    executioner.onStart(StartMatlabEngine())
-    executioner.add(SetMatlabFields()) # load fields into memory in Matlab
-    executioner.add(RunMatlabScript("myScript.m"))
-    executioner.add(GetMatlabFields("X", "Y"))
-    executioner.onComplete(RunMatlabCommand("exit"))
-    
